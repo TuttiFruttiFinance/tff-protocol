@@ -92,6 +92,12 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
         uint256 amount
     );
 
+    event IntParameterChanged(string parameter, uint256 value);
+    event AddressParameterChanged(string parameter, address target);
+    event Ended();
+    event Dusted();
+    event Saved();
+
     constructor(
         TuttiFruttiFinance _tff,
         uint256 _tffPerBlock,
@@ -365,17 +371,18 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
         require (_pid != 0, '!w-unstake');
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        pool.lpToken.safeTransfer(address(msg.sender), user.amount);
-        emit EmergencyWithdraw(msg.sender, _pid, user.amount);
+        uint256 amount = user.amount;
         user.amount = 0;
         user.rewardDebt = 0;
         user.pendingRewards = 0;
+        pool.lpToken.safeTransfer(address(msg.sender), amount);
+        emit EmergencyWithdraw(msg.sender, _pid, amount);
     }
 
     function claimRewards(uint256 _pid) public {
         PoolInfo storage pool = poolInfo[_pid];
         UserInfo storage user = userInfo[_pid][msg.sender];
-        require (user.claimAmount <= 0, '!cl');
+        require (user.claimAmount == 0, '!cl');
         updatePool(_pid);
         uint256 pending = user.amount.mul(pool.accTffPerShare).div(1e12).sub(user.rewardDebt);
         if (pending > 0 || user.pendingRewards > 0) {
@@ -411,10 +418,9 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
         pool.totalLocked = pool.totalLocked.sub(user.lockedAmount);
         user.lockedAmount = 0;
         user.claimTimestamp = 0;
-
-        emit ClaimCollected(msg.sender, _pid, amount);
-        safeTffTransfer(msg.sender, amount);
         user.rewardDebt = user.amount.mul(pool.accTffPerShare).div(1e12);
+        safeTffTransfer(msg.sender, amount);
+        emit ClaimCollected(msg.sender, _pid, amount);
     }
 
     function cancelClaim(uint256 _pid) public {
@@ -499,9 +505,9 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
     function safeTffTransfer(address _to, uint256 _amount) internal {
         uint256 tffBal = tff.balanceOf(address(this));
         if (_amount > tffBal) {
-            tff.transfer(_to, tffBal);
+            IBEP20(tff).safeTransfer(_to, tffBal);
         } else {
-            tff.transfer(_to, _amount);
+            IBEP20(tff).safeTransfer(_to, _amount);
         }
     }
 
@@ -510,46 +516,49 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
     function setTffPerBlock(uint256 _tffPerBlock) public onlyOwner {
         require(_tffPerBlock > 0, "!null");
         tffPerBlock = _tffPerBlock;
+        emit IntParameterChanged('tffPerBlock', tffPerBlock);
     }
 
     function setWithdrawalFees(uint256 _early, uint256 _normal) external onlyOwner {
         require(_early <= maxEarlyFee && _normal <= maxNormalFee, '!fee');
         earlyFee = _early;
         normalFee = _normal;
+        emit IntParameterChanged('earlyFee', earlyFee);
+        emit IntParameterChanged('normalFee', normalFee);
     }
 
     function setFees(uint256 _treasuryFee, uint256 _rewardsFee) external onlyOwner {
         require(_treasuryFee.add(_rewardsFee) <= baseFee, '!fee');
         treasuryFee = _treasuryFee;
         rewardsFee = _rewardsFee;
+        emit IntParameterChanged('treasuryFee', treasuryFee);
+        emit IntParameterChanged('rewardsFee', rewardsFee);
     }
 
     function setPeriods(uint256 _unlockPeriod, uint256 _penaltyPeriod) external onlyOwner {
         require(_unlockPeriod <= 2 days && _penaltyPeriod <= 4 weeks, '!period');
         unlockPeriod = _unlockPeriod;
         penaltyPeriod = _penaltyPeriod;
+        emit IntParameterChanged('unlockPeriod', unlockPeriod);
+        emit IntParameterChanged('penaltyPeriod', penaltyPeriod);
     }
 
     function setTreasury(address _treasury) external {
         require(msg.sender == treasury, '!treasury');
         treasury = _treasury;
+        emit AddressParameterChanged('treasury', treasury);
     }
 
     function setRewards(address _rewards) external {
         require(msg.sender == rewards, '!rewards');
         rewards = _rewards;
+        emit AddressParameterChanged('rewards', rewards);
     }
 
     function setFund(address _fund) external onlyOwner {
+        require(fund == address(0), '!fund');
         fund = _fund;
-    }
-
-    function salvage(address token) external onlyOwner {
-        require (token != address(tff), '!tff');
-        uint256 balance = IBEP20(token).balanceOf(address(this));
-        if (balance > 0) {
-            IBEP20(token).safeTransfer(msg.sender, balance);
-        }
+        emit AddressParameterChanged('fund', fund);
     }
 
     function end() external onlyOwner {
@@ -558,6 +567,7 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
             setPaused(true);
             ended = block.timestamp;
         }
+        emit Ended();
     }
 
     function dust() external onlyOwner {
@@ -567,6 +577,7 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
         if (balance > 0) {
             safeTffTransfer(msg.sender, balance);
         }
+        emit Dusted();
     }
 
     function save() external onlyOwner {
@@ -576,6 +587,7 @@ contract TuttiFruttiMaster is Ownable, Pausable, ReentrancyGuard {
         if (balance > 0) {
             safeTffTransfer(msg.sender, balance);
         }
+        emit Saved();
     }
 
     // *** MODIFIERS **** //

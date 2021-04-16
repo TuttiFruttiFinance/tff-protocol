@@ -146,9 +146,8 @@ contract TffRetirementFund is ReentrancyGuard, Pausable {
         _deposits[msg.sender] = total;
         _totalDeposited = _totalDeposited.add(amount);
 
-        _totalSupply = _totalSupply.sub(_balances[msg.sender]);
+        _totalSupply = _totalSupply.sub(_balances[msg.sender]).add(shares);
         _balances[msg.sender] = shares;
-        _totalSupply = _totalSupply.add(shares);
 
         _periods[msg.sender] = lockPeriod;
         _locks[msg.sender] = block.timestamp.add(lockPeriod);
